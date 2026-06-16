@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>🎓 Abiball Einlass 2026</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f13; color: #f0ede8; min-height: 100vh; }
+  #header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-bottom: 1px solid #2a2a3e;
+    padding: 14px 16px;
+    position: sticky; top: 0; z-index: 10;
+  }
+  .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .title { font-size: 19px; font-weight: 700; }
+  .sync-status { font-size: 11px; color: #7c7c9a; margin-top: 2px; }
+  .counter { text-align: right; }
+  .counter-num { font-size: 26px; font-weight: 800; color: #a78bfa; line-height: 1; }
+  .counter-label { font-size: 11px; color: #7c7c9a; }
+  .progress-bar { height: 5px; background: #2a2a3e; border-radius: 3px; overflow: hidden; margin-bottom: 10px; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #7c3aed, #a78bfa); border-radius: 3px; transition: width 0.4s; }
+  #search {
+    width: 100%; padding: 10px 14px; border-radius: 10px;
+    border: 1px solid #2a2a3e; background: #1a1a2e; color: #f0ede8;
+    font-size: 16px; outline: none; margin-bottom: 10px;
+  }
+  .tabs { display: flex; gap: 6px; }
+  .tab {
+    flex: 1; padding: 7px 0; border-radius: 8px; border: none;
+    cursor: pointer; font-size: 12px; font-weight: 600;
+    background: #1a1a2e; color: #7c7c9a; transition: all 0.2s;
+  }
+  .tab.active { background: #7c3aed; color: #fff; }
+  #list { max-width: 600px; margin: 0 auto; padding: 12px 14px 80px; }
+  .guest-card {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; margin-bottom: 7px; border-radius: 12px;
+    background: #1a1a2e; border: 1px solid #2a2a3e;
+    cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  .guest-card.checked { background: rgba(124,58,237,0.15); border-color: rgba(167,139,250,0.4); }
+  .guest-info { flex: 1; min-width: 0; }
+  .guest-name { font-size: 16px; font-weight: 600; color: #f0ede8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .guest-card.checked .guest-name { text-decoration: line-through; color: #7c7c9a; }
+  .guest-meta { display: flex; gap: 7px; margin-top: 3px; align-items: center; flex-wrap: wrap; }
+  .guest-group { font-size: 11px; color: #5a5a7a; background: #2a2a3e; padding: 1px 7px; border-radius: 6px; }
+  .guest-tickets { font-size: 11px; color: #a78bfa; }
+  .guest-time { font-size: 11px; color: #7c7c9a; }
+  .check-circle {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: #2a2a3e; display: flex; align-items: center;
+    justify-content: center; font-size: 16px; flex-shrink: 0;
+    margin-left: 10px; color: #fff; font-weight: 700;
+  }
+  .guest-card.checked .check-circle { background: #7c3aed; }
+  .empty { text-align: center; padding: 40px; color: #7c7c9a; }
+  #debug { font-size: 11px; color: #ff6b6b; text-align: center; padding: 8px; display: none; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div style="max-width:600px;margin:0 auto;">
+    <div class="header-top">
+      <div>
+        <div class="title">🎓 Abiball Einlass 2026</div>
+        <div class="sync-status" id="sync-status">Verbinde mit Datenbank…</div>
+      </div>
+      <div class="counter">
+        <div class="counter-num" id="counter-num">0</div>
+        <div class="counter-label" id="counter-label">von 160 da</div>
+      </div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    <input type="search" id="search" placeholder="🔍 Name suchen…" oninput="render()">
+    <div class="tabs">
+      <button class="tab active" onclick="setView('all',this)">Alle</button>
+      <button class="tab" onclick="setView('unchecked',this)">Ausstehend</button>
+      <button class="tab" onclick="setView('checked',this)">Anwesend</button>
+    </div>
+  </div>
+</div>
+<div id="debug"></div>
+<div id="list"><div class="empty">Lade Liste…</div></div>
+
+<script>
+const GUESTS = [
+  { name: "Antonia Massmann", tickets: 4, group: "Müller" },
+  { name: "Cosima Steyer", tickets: 4, group: "Müller" },
+  { name: "Eliah Gonzales", tickets: 3, group: "Müller" },
+  { name: "Emil Lehmann", tickets: 3, group: "Müller" },
+  { name: "Hanna Kruckenberg", tickets: 3, group: "Müller" },
+  { name: "Isabel Verdier", tickets: 4, group: "Müller" },
+  { name: "Kaito Klawitter", tickets: 4, group: "Müller" },
+  { name: "Laetizia Kretschmer", tickets: 5, group: "Müller" },
+  { name: "Levi Stagnet", tickets: 4, group: "Müller" },
+  { name: "Lina Aßmann", tickets: 3, group: "Müller" },
+  { name: "Lukas Sandvoß", tickets: 3, group: "Müller" },
+  { name: "Lynn Einfeldt", tickets: 5, group: "Müller" },
+  { name: "Paula Blecic", tickets: 4, group: "Müller" },
+  { name: "Aitana Merida", tickets: 4, group: "Canorea" },
+  { name: "Clara Guter", tickets: 5, group: "Canorea" },
+  { name: "Deniz Mengünogul", tickets: 4, group: "Canorea" },
+  { name: "Ella Paulus", tickets: 5, group: "Canorea" },
+  { name: "Emily Zaje", tickets: 1, group: "Canorea" },
+  { name: "Enzo Kohigashi Berners", tickets: 4, group: "Canorea" },
+  { name: "Laura Schaub", tickets: 4, group: "Canorea" },
+  { name: "Liberty Laxy", tickets: 6, group: "Canorea" },
+  { name: "Mattes Hüser", tickets: 4, group: "Canorea" },
+  { name: "Maximilian Winkler", tickets: 4, group: "Canorea" },
+  { name: "Phillip Merida", tickets: 3, group: "Canorea" },
+  { name: "Sophie Arens", tickets: 5, group: "Canorea" },
+  { name: "Viren Kron-Ojeda", tickets: 4, group: "Canorea" },
+  { name: "Alexander Anh Quang Doan", tickets: 1, group: "Enslin" },
+  { name: "Atija Joldašević", tickets: 4, group: "Enslin" },
+  { name: "Benjamin Kusber", tickets: 5, group: "Enslin" },
+  { name: "Fynn Jannis Klühs", tickets: 3, group: "Enslin" },
+  { name: "Kaja Bonke", tickets: 4, group: "Enslin" },
+  { name: "Karla Kracke", tickets: 4, group: "Enslin" },
+  { name: "Noah Litten", tickets: 4, group: "Enslin" },
+  { name: "Patrick Marchlewski", tickets: 1, group: "Enslin" },
+  { name: "Paul Steuernagel", tickets: 4, group: "Enslin" },
+  { name: "Sofia Romanou", tickets: 4, group: "Enslin" },
+  { name: "Tim Bäcker", tickets: 4, group: "Enslin" },
+  { name: "Andreea Nicolcioiu", tickets: 4, group: "Frisch" },
+  { name: "Anna Katharina Klaes", tickets: 5, group: "Frisch" },
+  { name: "Carl Haiblé", tickets: 3, group: "Frisch" },
+  { name: "Greta Marschall", tickets: 4, group: "Frisch" },
+  { name: "Karlin del Carmen Alvarez del Valle", tickets: 4, group: "Frisch" },
+  { name: "Laura Tittelbach", tickets: 3, group: "Frisch" },
+  { name: "Mathilda Heß", tickets: 3, group: "Frisch" },
+  { name: "Natascha Irrgang", tickets: 0, group: "Frisch" },
+  { name: "Salma Alami-Marouni", tickets: 4, group: "Frisch" },
+  { name: "Sophie Metzler", tickets: 4, group: "Frisch" },
+  { name: "Aaron Bücker", tickets: 3, group: "Leboterf" },
+  { name: "Bruno Szeles", tickets: 4, group: "Leboterf" },
+  { name: "Carl Wetzel", tickets: 7, group: "Leboterf" },
+  { name: "Emma Kannler", tickets: 3, group: "Leboterf" },
+  { name: "Felix Blasberg", tickets: 5, group: "Leboterf" },
+  { name: "Julia Hechenblaickner", tickets: 5, group: "Leboterf" },
+  { name: "Lena Herrmann", tickets: 3, group: "Leboterf" },
+  { name: "Levin Betz", tickets: 5, group: "Leboterf" },
+  { name: "Matej Seman", tickets: 3, group: "Leboterf" },
+  { name: "Mia Saric", tickets: 2, group: "Leboterf" },
+  { name: "Oscar Hofmann", tickets: 3, group: "Leboterf" },
+  { name: "Sophia Gruber", tickets: 4, group: "Leboterf" },
+  { name: "Tom Sommerfeld", tickets: 4, group: "Leboterf" },
+  { name: "Tom Meyer", tickets: 4, group: "Leboterf" },
+  { name: "Arsam Asadi", tickets: 3, group: "Neeb" },
+  { name: "Artur Markarov", tickets: 1, group: "Neeb" },
+  { name: "Clara Werckmeister", tickets: 3, group: "Neeb" },
+  { name: "Elena Tremmel", tickets: 2, group: "Neeb" },
+  { name: "Erik Roeder", tickets: 3, group: "Neeb" },
+  { name: "Franziskus Leistner", tickets: 5, group: "Neeb" },
+  { name: "Bijan Ansari", tickets: 5, group: "Neeb" },
+  { name: "Frederic Jacob", tickets: 4, group: "Neeb" },
+  { name: "Jannis Link", tickets: 3, group: "Neeb" },
+  { name: "Julian Flores", tickets: 4, group: "Neeb" },
+  { name: "Julian Keil", tickets: 4, group: "Neeb" },
+  { name: "Konrad Kretzer", tickets: 3, group: "Neeb" },
+  { name: "Luke Vallet", tickets: 2, group: "Neeb" },
+  { name: "Martha Jennings", tickets: 4, group: "Neeb" },
+  { name: "Mathis Heidt", tickets: 5, group: "Neeb" },
+  { name: "Niklas Lindner", tickets: 3, group: "Neeb" },
+  { name: "Aura Yosief", tickets: 4, group: "Ohlmer" },
+  { name: "Beatrice Teixeira", tickets: 4, group: "Ohlmer" },
+  { name: "Cosima Löw", tickets: 4, group: "Ohlmer" },
+  { name: "Damian Clöer", tickets: 3, group: "Ohlmer" },
+  { name: "Emily Schaar", tickets: 4, group: "Ohlmer" },
+  { name: "Emily Dube", tickets: 3, group: "Ohlmer" },
+  { name: "Eva Muniz Fernandez", tickets: 4, group: "Ohlmer" },
+  { name: "Flora Gahmig", tickets: 6, group: "Ohlmer" },
+  { name: "Hailan Gao", tickets: 3, group: "Ohlmer" },
+  { name: "Helen Fahrnschon", tickets: 4, group: "Ohlmer" },
+  { name: "Jesko Pelchrzim", tickets: 1, group: "Ohlmer" },
+  { name: "Maximilian Dik", tickets: 4, group: "Ohlmer" },
+  { name: "Niklas Weiss", tickets: 4, group: "Ohlmer" },
+  { name: "Noah Kresse", tickets: 4, group: "Ohlmer" },
+  { name: "Sebastian Harre", tickets: 3, group: "Ohlmer" },
+  { name: "Sophia Bockeloh", tickets: 6, group: "Ohlmer" },
+  { name: "Ruben Trillig", tickets: 4, group: "" },
+  { name: "Sönke Dirks", tickets: 6, group: "" },
+  { name: "Teo Ferfert", tickets: 4, group: "" },
+  { name: "Tim Schmandt", tickets: 3, group: "" },
+  { name: "Amelie Reuter", tickets: 4, group: "Schulte-Witten" },
+  { name: "Anna-Sophie Raps", tickets: 3, group: "Schulte-Witten" },
+  { name: "Emilia Nierobisch", tickets: 4, group: "Schulte-Witten" },
+  { name: "Faiyha Hasanat Gany", tickets: 5, group: "Schulte-Witten" },
+  { name: "Frederick König", tickets: 3, group: "Schulte-Witten" },
+  { name: "Frida Eisenmann", tickets: 4, group: "Schulte-Witten" },
+  { name: "Jolina Gödtel", tickets: 3, group: "Schulte-Witten" },
+  { name: "Helen Roßkopf", tickets: 2, group: "Schulte-Witten" },
+  { name: "Jasmin Anders", tickets: 5, group: "Schulte-Witten" },
+  { name: "Karin Reichenbach", tickets: 1, group: "Schulte-Witten" },
+  { name: "Lilia Siddique", tickets: 4, group: "Schulte-Witten" },
+  { name: "Berit Henkel", tickets: 5, group: "Schlenker" },
+  { name: "Emily Davies", tickets: 5, group: "Schlenker" },
+  { name: "Franka Bär", tickets: 2, group: "Schlenker" },
+  { name: "Helena Scheldorf", tickets: 4, group: "Schlenker" },
+  { name: "Ivan Matanovic", tickets: 4, group: "Schlenker" },
+  { name: "Jannik Lautenbach", tickets: 6, group: "Schlenker" },
+  { name: "Julius Nägle", tickets: 4, group: "Schlenker" },
+  { name: "Justus Mühlhausen", tickets: 4, group: "Schlenker" },
+  { name: "Lennard Aldersly", tickets: 3, group: "Schlenker" },
+  { name: "Lilian Müller", tickets: 4, group: "Schlenker" },
+  { name: "Lotta Scherz", tickets: 3, group: "Schlenker" },
+  { name: "Marisa Ludwig", tickets: 4, group: "Schlenker" },
+  { name: "Maxim Poberschin", tickets: 3, group: "Schlenker" },
+  { name: "Moritz Körle", tickets: 5, group: "Schlenker" },
+  { name: "Nelly Stephan", tickets: 3, group: "Schlenker" },
+  { name: "Niklas Berkhoff", tickets: 4, group: "Schlenker" },
+  { name: "Oscar Flottau", tickets: 3, group: "Schlenker" },
+  { name: "Sophia Jörn", tickets: 4, group: "Schlenker" },
+  { name: "Sophie Gypkens", tickets: 4, group: "Schlenker" },
+  { name: "Tekin Fark", tickets: 5, group: "Schlenker" },
+  { name: "Frau Frisch (Französisch)", tickets: null, group: "Lehrer (Kurs)" },
+  { name: "Herr Leboterf (Mathe)", tickets: null, group: "Lehrer (Kurs)" },
+  { name: "Herr Enslin (Englisch)", tickets: null, group: "Lehrer (Kurs)" },
+  { name: "Herr Mihalik (Geschichte)", tickets: null, group: "Lehrer (Kurs)" },
+  { name: "Frau Schlenker (PoWi)", tickets: null, group: "Lehrer (Kurs)" },
+  { name: "Herr Canorea (Spanisch)", tickets: null, group: "Lehrer (Kurs)" },
+  { name: "Herr Döpke (Deutsch)", tickets: null, group: "Lehrer (Kurs)" },
+  { name: "Herr Neeb (Physik)", tickets: null, group: "Lehrer (Kurs)" },
+  { name: "Herr Ohlmer (Englisch)", tickets: null, group: "Lehrer (Kurs)" },
+  { name: "Frau Schulte-Witten (Englisch)", tickets: null, group: "Lehrer (Kurs)" },
+  { name: "Frau Klein (Latein)", tickets: null, group: "Lehrer (Kurs)" },
+  { name: "Frau Biehn", tickets: null, group: "Lehrer (Selbst)" },
+  { name: "Frau Klein", tickets: null, group: "Lehrer (Selbst)" },
+  { name: "Herr Sigl", tickets: null, group: "Lehrer (Selbst)" },
+  { name: "Frau Peterle", tickets: null, group: "Lehrer (Selbst)" },
+  { name: "Frau Hadlock", tickets: null, group: "Lehrer (Selbst)" },
+  { name: "Herr Schmitt", tickets: null, group: "Lehrer (Selbst)" },
+  { name: "Herr Kaden", tickets: null, group: "Lehrer (Selbst)" },
+  { name: "Herr Ranft", tickets: null, group: "Lehrer (Selbst)" },
+  { name: "Frau Rohe", tickets: null, group: "Lehrer (Selbst)" },
+  { name: "Herr Neeb Freundin", tickets: null, group: "Lehrer (Selbst)" },
+  { name: "Frau Nevermann", tickets: null, group: "Lehrer (Selbst)" },
+  { name: "Deliah Straka", tickets: 3, group: "Abgegangene" },
+  { name: "Ole Kubas", tickets: 1, group: "Abgegangene" },
+  { name: "Simon Weddehange", tickets: 2, group: "Abgegangene" },
+  { name: "Bela Heimel", tickets: 2, group: "Abgegangene" },
+  { name: "Valeria von d Aa", tickets: 3, group: "Abgegangene" },
+  { name: "Marla", tickets: 1, group: "Abgegangene" },
+  { name: "Jan Krakat (Band)", tickets: null, group: "Weitere" },
+];
+
+let state = {};
+let currentView = 'all';
+
+function toKey(name) {
+  return encodeURIComponent(name).replace(/%/g, '_');
+}
+
+function toKeyReverse() {}
+
+const DB_URL = "https://abiabll2026-default-rtdb.firebaseio.com/checkin";
+
+// Load state from Firebase REST API
+async function loadState() {
+  try {
+    const res = await fetch(DB_URL + ".json");
+    const data = await res.json();
+    state = data || {};
+    document.getElementById('sync-status').textContent = "✓ Live synchronisiert";
+    render();
+  } catch(e) {
+    document.getElementById('sync-status').textContent = "⚠ Verbindungsfehler";
+    document.getElementById('sync-status').className = 'sync-status error';
+    // Show names anyway even without DB
+    render();
+  }
+}
+
+// Poll every 3 seconds
+loadState();
+setInterval(loadState, 3000);
+
+async function toggle(name) {
+  const key = toKey(name);
+  const current = state[key] || {};
+  const nowChecked = !current.checked;
+  const now = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  const newVal = nowChecked ? { checked: true, time: now } : { checked: false, time: null };
+
+  // Optimistic update
+  state[key] = newVal;
+  render();
+
+  try {
+    await fetch(DB_URL + "/" + key + ".json", {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newVal)
+    });
+  } catch(e) {
+    console.error('Sync error', e);
+  }
+}
+
+function setView(v, btn) {
+  currentView = v;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  render();
+}
+
+function render() {
+  const search = document.getElementById('search').value.toLowerCase();
+  const filtered = GUESTS.filter(g => {
+    const matchSearch = g.name.toLowerCase().includes(search);
+    const key = toKey(g.name);
+    const checked = state[key] && state[key].checked;
+    if (currentView === 'checked') return matchSearch && checked;
+    if (currentView === 'unchecked') return matchSearch && !checked;
+    return matchSearch;
+  });
+
+  const checkedCount = GUESTS.filter(g => state[toKey(g.name)] && state[toKey(g.name)].checked).length;
+  const total = GUESTS.length;
+
+  document.getElementById('counter-num').textContent = checkedCount;
+  document.getElementById('counter-label').textContent = "von " + total + " da";
+  document.getElementById('progress-fill').style.width = (checkedCount / total * 100) + "%";
+
+  const list = document.getElementById('list');
+  if (filtered.length === 0) {
+    list.innerHTML = '<div class="empty">Kein Eintrag gefunden.</div>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(g => {
+    const key = toKey(g.name);
+    const entry = state[key] || {};
+    const checked = entry.checked || false;
+    const safeName = g.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return '<div class="guest-card ' + (checked ? 'checked' : '') + '" onclick="toggle(\'' + safeName + '\')">' +
+      '<div class="guest-info">' +
+        '<div class="guest-name">' + g.name + '</div>' +
+        '<div class="guest-meta">' +
+          (g.group ? '<span class="guest-group">' + g.group + '</span>' : '') +
+          (g.tickets != null ? '<span class="guest-tickets">🎟 ' + g.tickets + ' ' + (g.tickets === 1 ? 'Ticket' : 'Tickets') + '</span>' : '') +
+          (checked && entry.time ? '<span class="guest-time">· ' + entry.time + ' Uhr</span>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="check-circle">' + (checked ? '✓' : '') + '</div>' +
+    '</div>';
+  }).join('');
+}
+</script>
+</body>
+</html>
