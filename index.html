@@ -57,6 +57,9 @@
   .guest-card.checked .check-circle { background: #7c3aed; }
   .empty { text-align: center; padding: 40px; color: #7c7c9a; }
   #debug { font-size: 11px; color: #ff6b6b; text-align: center; padding: 8px; display: none; }
+  .mini-progress { height: 3px; background: #2a2a3e; border-radius: 2px; overflow: hidden; margin-top: 5px; width: 100%; }
+  .mini-progress-fill { height: 100%; background: #a78bfa; border-radius: 2px; transition: width 0.2s; }
+  #hint { max-width: 600px; margin: 0 auto; padding: 0 16px 10px; font-size: 11px; color: #5a5a7a; text-align: center; }
 </style>
 </head>
 <body>
@@ -82,6 +85,7 @@
     </div>
   </div>
 </div>
+<div id="hint">👆 Antippen = 1 Ticket einlassen · 👇 Lange drücken / Rechtsklick = 1 Ticket zurück</div>
 <div id="debug"></div>
 <div id="list"><div class="empty">Lade Liste…</div></div>
 
@@ -164,10 +168,6 @@ const GUESTS = [
   { name: "Martha Jennings", tickets: 4, group: "Neeb" },
   { name: "Mathis Heidt", tickets: 5, group: "Neeb" },
   { name: "Niklas Lindner", tickets: 3, group: "Neeb" },
-  { name: "Ruben Trillig", tickets: 4, group: "Neeb" },
-  { name: "Sönke Dirks", tickets: 6, group: "Neeb" },
-  { name: "Teo Ferfert", tickets: 4, group: "Neeb" },
-  { name: "Tim Schmandt", tickets: 3, group: "Neeb" },
   { name: "Aura Yosief", tickets: 4, group: "Ohlmer" },
   { name: "Beatrice Teixeira", tickets: 4, group: "Ohlmer" },
   { name: "Cosima Löw", tickets: 4, group: "Ohlmer" },
@@ -184,6 +184,10 @@ const GUESTS = [
   { name: "Noah Kresse", tickets: 4, group: "Ohlmer" },
   { name: "Sebastian Harre", tickets: 3, group: "Ohlmer" },
   { name: "Sophia Bockeloh", tickets: 6, group: "Ohlmer" },
+  { name: "Ruben Trillig", tickets: 4, group: "" },
+  { name: "Sönke Dirks", tickets: 6, group: "" },
+  { name: "Teo Ferfert", tickets: 4, group: "" },
+  { name: "Tim Schmandt", tickets: 3, group: "" },
   { name: "Amelie Reuter", tickets: 4, group: "Schulte-Witten" },
   { name: "Anna-Sophie Raps", tickets: 3, group: "Schulte-Witten" },
   { name: "Emilia Nierobisch", tickets: 4, group: "Schulte-Witten" },
@@ -231,8 +235,7 @@ const GUESTS = [
   { name: "Herr Sigl", tickets: null, group: "Lehrer (Selbst)" },
   { name: "Frau Peterle", tickets: null, group: "Lehrer (Selbst)" },
   { name: "Frau Hadlock", tickets: null, group: "Lehrer (Selbst)" },
-  { name: "Gabriel Schmitt", tickets: null, group: "Lehrer (Selbst)" },
-  { name: "Jan Schmitt", tickets: null, group: "Lehrer (Selbst)" },
+  { name: "Herr Schmitt", tickets: null, group: "Lehrer (Selbst)" },
   { name: "Herr Kaden", tickets: null, group: "Lehrer (Selbst)" },
   { name: "Herr Ranft", tickets: null, group: "Lehrer (Selbst)" },
   { name: "Frau Rohe", tickets: null, group: "Lehrer (Selbst)" },
@@ -244,17 +247,22 @@ const GUESTS = [
   { name: "Bela Heimel", tickets: 2, group: "Abgegangene" },
   { name: "Valeria von d Aa", tickets: 3, group: "Abgegangene" },
   { name: "Marla", tickets: 1, group: "Abgegangene" },
-  { name: "Jan Krakat", tickets: null, group: "Weitere" },
+  { name: "Jan Krakat (Band)", tickets: null, group: "Weitere" },
 ];
 
 let state = {};
 let currentView = 'all';
+let pressTimer = null;
+let longPressTriggered = false;
 
 function toKey(name) {
   return encodeURIComponent(name).replace(/%/g, '_');
 }
 
-function toKeyReverse() {}
+function maxTickets(g) {
+  // Leute ohne Ticketzahl (Lehrer etc.) zählen als 1 Einlass
+  return g.tickets == null ? 1 : g.tickets;
+}
 
 const DB_URL = "https://abiabll2026-default-rtdb.firebaseio.com/checkin";
 
@@ -269,7 +277,6 @@ async function loadState() {
   } catch(e) {
     document.getElementById('sync-status').textContent = "⚠ Verbindungsfehler";
     document.getElementById('sync-status').className = 'sync-status error';
-    // Show names anyway even without DB
     render();
   }
 }
@@ -278,17 +285,9 @@ async function loadState() {
 loadState();
 setInterval(loadState, 3000);
 
-async function toggle(name) {
-  const key = toKey(name);
-  const current = state[key] || {};
-  const nowChecked = !current.checked;
-  const now = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-  const newVal = nowChecked ? { checked: true, time: now } : { checked: false, time: null };
-
-  // Optimistic update
+async function saveEntry(key, newVal) {
   state[key] = newVal;
   render();
-
   try {
     await fetch(DB_URL + "/" + key + ".json", {
       method: 'PUT',
@@ -298,6 +297,61 @@ async function toggle(name) {
   } catch(e) {
     console.error('Sync error', e);
   }
+}
+
+// Klick: ein Ticket einlassen. Bei 0 verbleibenden Tickets -> Person komplett "anwesend"
+async function checkIn(name) {
+  const g = GUESTS.find(x => x.name === name);
+  if (!g) return;
+  const key = toKey(name);
+  const current = state[key] || { checked: false, remaining: maxTickets(g), time: null };
+  const total = maxTickets(g);
+  let remaining = current.remaining != null ? current.remaining : total;
+
+  if (current.checked) return; // schon komplett abgehakt
+
+  remaining = Math.max(0, remaining - 1);
+  const now = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  const checked = remaining === 0;
+  const newVal = { checked: checked, remaining: remaining, time: now };
+  await saveEntry(key, newVal);
+}
+
+// Langer Druck / Rechtsklick: ein Ticket zurückgeben (rückgängig)
+async function checkOut(name) {
+  const g = GUESTS.find(x => x.name === name);
+  if (!g) return;
+  const key = toKey(name);
+  const total = maxTickets(g);
+  const current = state[key] || { checked: false, remaining: total, time: null };
+  let remaining = current.remaining != null ? current.remaining : total;
+
+  if (remaining >= total) return; // nichts zum Rückgängigmachen
+
+  remaining = Math.min(total, remaining + 1);
+  const now = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  const newVal = { checked: false, remaining: remaining, time: remaining < total ? now : null };
+  await saveEntry(key, newVal);
+}
+
+function handlePressStart(name, evt) {
+  longPressTriggered = false;
+  pressTimer = setTimeout(() => {
+    longPressTriggered = true;
+    if (navigator.vibrate) navigator.vibrate(40);
+    checkOut(name);
+  }, 550);
+}
+
+function handlePressEnd(name) {
+  clearTimeout(pressTimer);
+  if (!longPressTriggered) {
+    checkIn(name);
+  }
+}
+
+function handlePressCancel() {
+  clearTimeout(pressTimer);
 }
 
 function setView(v, btn) {
@@ -335,15 +389,31 @@ function render() {
     const key = toKey(g.name);
     const entry = state[key] || {};
     const checked = entry.checked || false;
+    const total = maxTickets(g);
+    const remaining = entry.remaining != null ? entry.remaining : total;
+    const arrived = total - remaining;
     const safeName = g.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return '<div class="guest-card ' + (checked ? 'checked' : '') + '" onclick="toggle(\'' + safeName + '\')">' +
+    const ticketLabel = g.tickets != null
+      ? (checked
+          ? '🎟 alle ' + total + ' da'
+          : '🎟 ' + remaining + ' von ' + total + ' offen' + (arrived > 0 ? ' (' + arrived + ' eingelassen)' : ''))
+      : '';
+    return '<div class="guest-card ' + (checked ? 'checked' : '') + '" ' +
+      'onmousedown="handlePressStart(\'' + safeName + '\')" ' +
+      'onmouseup="handlePressEnd(\'' + safeName + '\')" ' +
+      'onmouseleave="handlePressCancel()" ' +
+      'ontouchstart="handlePressStart(\'' + safeName + '\')" ' +
+      'ontouchend="handlePressEnd(\'' + safeName + '\')" ' +
+      'ontouchcancel="handlePressCancel()" ' +
+      'oncontextmenu="event.preventDefault(); checkOut(\'' + safeName + '\'); return false;">' +
       '<div class="guest-info">' +
         '<div class="guest-name">' + g.name + '</div>' +
         '<div class="guest-meta">' +
           (g.group ? '<span class="guest-group">' + g.group + '</span>' : '') +
-          (g.tickets != null ? '<span class="guest-tickets">🎟 ' + g.tickets + ' ' + (g.tickets === 1 ? 'Ticket' : 'Tickets') + '</span>' : '') +
+          (ticketLabel ? '<span class="guest-tickets">' + ticketLabel + '</span>' : '') +
           (checked && entry.time ? '<span class="guest-time">· ' + entry.time + ' Uhr</span>' : '') +
         '</div>' +
+        (g.tickets != null && total > 1 ? '<div class="mini-progress"><div class="mini-progress-fill" style="width:' + (arrived / total * 100) + '%"></div></div>' : '') +
       '</div>' +
       '<div class="check-circle">' + (checked ? '✓' : '') + '</div>' +
     '</div>';
